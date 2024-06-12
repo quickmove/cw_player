@@ -65,9 +65,10 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 
 // 按键扫描状态机
-#define KEY_STATUS_DOWN	0
-#define KEY_STATUS_UP		1
-#define KEY_STATUS_IDLE	2
+#define KEY_STATUS_IDLE	0
+#define KEY_STATUS_DOWN	1
+#define KEY_STATUS_UP		2
+
 
 // 按键防抖计数器
 #define DEBOUND_COUNT_MAX	65535

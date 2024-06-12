@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "math.h"
 #include "queue.h"
 
 /* USER CODE END Includes */
@@ -74,6 +75,7 @@ const osThreadAttr_t ledTask_attributes = {
 };
 /* USER CODE BEGIN PV */
 
+// 队列定义
 StaticQueue_t keyEventQueueBuffer;
 uint8_t keyEventQueueStorage[QUEUE_LENGTH * QUEUE_ITEM_SIZE];
 QueueHandle_t keyEventQueue;
@@ -91,10 +93,14 @@ void StartTaskLed(void *argument);
 
 /* USER CODE BEGIN PFP */
 
+void oledInit(void);
+void oledShow();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 
 /* USER CODE END 0 */
 
@@ -315,9 +321,11 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+	// 定义变量
 	uint8_t keyEventMsg;
 	BaseType_t xStatus;
 	const TickType_t ticksToWait = pdMS_TO_TICKS(100UL);
+
   /* Infinite loop */
   for(;;)
   {
