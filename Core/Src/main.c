@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "math.h"
 #include "queue.h"
+#include "ssd1306.h"
 
 /* USER CODE END Includes */
 
@@ -326,6 +327,8 @@ void StartDefaultTask(void *argument)
 	BaseType_t xStatus;
 	const TickType_t ticksToWait = pdMS_TO_TICKS(100UL);
 
+	ssd1306_init(&hi2c1);
+
   /* Infinite loop */
   for(;;)
   {
@@ -341,6 +344,19 @@ void StartDefaultTask(void *argument)
 			/* 没读到数据 */
 			printf("Could not receive from the queue.\r\n");
 		}
+    osDelay(1);
+    uint8_t posD[] = {0xb0, 0x00, 0x10};
+    ssd1306_show(posD, 3, &SSD1306FontMap[0][0], 16);
+    posD[0] = 0xb1;	// page1
+    posD[1] = 0x00;
+    ssd1306_show(posD, 3, &SSD1306FontMap[1][0], 16);
+    posD[0] = 0xb0;
+    posD[2] = 0x11;
+		ssd1306_show(posD, 3, &SSD1306FontMap[2][0], 16);
+		posD[0] = 0xb1;
+		posD[2] = 0x11;
+		ssd1306_show(posD, 3, &SSD1306FontMap[3][0], 16);
+
     osDelay(1);
   }
   /* USER CODE END 5 */
