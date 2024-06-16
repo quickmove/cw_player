@@ -46,10 +46,6 @@ uint8_t InitData[] = {
 // 原点地址:page0,col0
 uint8_t OriginData[] = {0xb0, 0x00, 0x10};
 
-// 帧缓存
-uint8_t SSD1306FramBuffer[8][128];
-
-
 ////////////////////////////////////////////////////////////////////////////////
 
 uint8_t ssd1306_init(I2C_HandleTypeDef* phI2c) {

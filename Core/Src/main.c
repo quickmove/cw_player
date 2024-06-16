@@ -36,6 +36,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -79,7 +80,19 @@ const osThreadAttr_t ledTask_attributes = {
 // 队列定义
 StaticQueue_t keyEventQueueBuffer;
 uint8_t keyEventQueueStorage[QUEUE_LENGTH * QUEUE_ITEM_SIZE];
-QueueHandle_t keyEventQueue;
+QueueHandle_t keyEvent_QueueHandle;
+
+// 字库表
+uint8_t fontMap[][16] = {
+		{0x00,0xC0,0x40,0x40,0x40,0x40,0xF0,0x40,0x40,0x40,0x40,0x40,0xC0,0x00,0x00,0x00},
+		{0x00,0x07,0x02,0x02,0x02,0x02,0x1F,0x02,0x02,0x02,0x02,0x02,0x07,0x00,0x00,0x00},/*,0 中*/
+
+		{0x20,0x20,0x20,0xE0,0x20,0x20,0x28,0x30,0x20,0x20,0xE0,0x20,0x20,0x20,0x00,0x00},
+		{0x10,0x10,0x10,0x08,0x09,0x0A,0x04,0x04,0x0A,0x09,0x08,0x10,0x10,0x10,0x00,0x00},/*,1 文*/
+};
+
+uint8_t cwLineDot[2] = {0x18, 0x18};
+uint8_t cwLineBlank[2] = {0x00, 0x00};
 
 /* USER CODE END PV */
 
@@ -94,14 +107,33 @@ void StartTaskLed(void *argument);
 
 /* USER CODE BEGIN PFP */
 
-void oledInit(void);
-void oledShow();
+void oledShowDemo(void);
+void oledShowCWLine(void);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// 显示中文2个字
+void oledShowDemo(void) {
+  uint8_t posD[] = {0xb0, 0x00, 0x10};
+  ssd1306_show(posD, 3, &fontMap[0][0], 16);
+  posD[0] = 0xb1;	// page1
+  posD[1] = 0x00;
+  ssd1306_show(posD, 3, &fontMap[1][0], 16);
+  posD[0] = 0xb0;
+  posD[2] = 0x11;
+	ssd1306_show(posD, 3, &fontMap[2][0], 16);
+	posD[0] = 0xb1;
+	posD[2] = 0x11;
+	ssd1306_show(posD, 3, &fontMap[3][0], 16);
+}
+
+// 显示CW的提示线
+void oledShowCWLine(void) {
+
+}
 
 /* USER CODE END 0 */
 
@@ -119,6 +151,8 @@ int main(void)
 			QUEUE_ITEM_SIZE,
 							keyEventQueueStorage,
 							&keyEventQueueBuffer);
+
+	osMessageQueueNew(QUEUE_LENGTH, QUEUE_ITEM_SIZE, attr);
 
   /* USER CODE END 1 */
 
@@ -339,23 +373,10 @@ void StartDefaultTask(void *argument)
 			/* 读到了数据 */
 			printf("Received = %d\r\n", keyEventMsg);
 		}
-		else
-		{
-			/* 没读到数据 */
-			printf("Could not receive from the queue.\r\n");
-		}
+
     osDelay(1);
-    uint8_t posD[] = {0xb0, 0x00, 0x10};
-    ssd1306_show(posD, 3, &SSD1306FontMap[0][0], 16);
-    posD[0] = 0xb1;	// page1
-    posD[1] = 0x00;
-    ssd1306_show(posD, 3, &SSD1306FontMap[1][0], 16);
-    posD[0] = 0xb0;
-    posD[2] = 0x11;
-		ssd1306_show(posD, 3, &SSD1306FontMap[2][0], 16);
-		posD[0] = 0xb1;
-		posD[2] = 0x11;
-		ssd1306_show(posD, 3, &SSD1306FontMap[3][0], 16);
+
+    oledShowDemo();
 
     osDelay(1);
   }
