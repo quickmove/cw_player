@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "stdio.h"
 #include "math.h"
 #include "queue.h"
 #include "ssd1306.h"
@@ -36,6 +37,8 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+#define CW_LINE_DOT		0x18
+#define CW_LINE_BLANK	0x00
 
 /* USER CODE END PD */
 
@@ -78,9 +81,7 @@ const osThreadAttr_t ledTask_attributes = {
 /* USER CODE BEGIN PV */
 
 // 队列定义
-StaticQueue_t keyEventQueueBuffer;
-uint8_t keyEventQueueStorage[QUEUE_LENGTH * QUEUE_ITEM_SIZE];
-QueueHandle_t keyEvent_QueueHandle;
+osMessageQueueId_t keyEventQueueId;
 
 // 字库表
 uint8_t fontMap[][16] = {
@@ -90,9 +91,6 @@ uint8_t fontMap[][16] = {
 		{0x20,0x20,0x20,0xE0,0x20,0x20,0x28,0x30,0x20,0x20,0xE0,0x20,0x20,0x20,0x00,0x00},
 		{0x10,0x10,0x10,0x08,0x09,0x0A,0x04,0x04,0x0A,0x09,0x08,0x10,0x10,0x10,0x00,0x00},/*,1 文*/
 };
-
-uint8_t cwLineDot[2] = {0x18, 0x18};
-uint8_t cwLineBlank[2] = {0x00, 0x00};
 
 /* USER CODE END PV */
 
@@ -147,12 +145,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
 	// 创建队列
-	keyEventQueue = xQueueCreateStatic( QUEUE_LENGTH,
-			QUEUE_ITEM_SIZE,
-							keyEventQueueStorage,
-							&keyEventQueueBuffer);
-
-	osMessageQueueNew(QUEUE_LENGTH, QUEUE_ITEM_SIZE, attr);
+	keyEventQueueId = osMessageQueueNew(QUEUE_LENGTH, QUEUE_ITEM_SIZE, NULL);
 
   /* USER CODE END 1 */
 
@@ -358,25 +351,37 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
 	// 定义变量
 	uint8_t keyEventMsg;
-	BaseType_t xStatus;
-	const TickType_t ticksToWait = pdMS_TO_TICKS(100UL);
+	osStatus_t status;
 
 	ssd1306_init(&hi2c1);
 
   /* Infinite loop */
   for(;;)
   {
-  	xStatus = xQueueReceive(keyEventQueue, &keyEventMsg, ticksToWait);
+  	status = osMessageQueueGet(keyEventQueueId, &keyEventMsg, NULL, osWaitForever);
+  	if (status == osOK) {
+  	  // 处理消息
+  		if(keyEventMsg == QUEUE_MSG_KEYDOWN) {
+  			for(;;) {
+  				// 数组循环左移2个下标，最后2个下标赋值CW_LINE_DOT
+  				// 重画cw_line页
+  				osDelay(500);
+  			}
+  		} else  if(keyEventMsg == QUEUE_MSG_KEYUP) {
+  			for(;;) {
+  				// 数组循环左移2个下标，最后2个下标赋值CW_LINE_BLANK
+  				// 重画cw_line页
+  				osDelay(500);
+  			}
+  		} else if(keyEventMsg == QUEUE_MSG_DECODE) {
+  			// 数组循环左移6个下标，最后6个赋值CW_LINE_BLANK
+  			// 重画cw_line页
+  		} else {
+  			// 啥也没有
+  			osDelay(1);
+  		}
 
-		if(xStatus == pdPASS)
-		{
-			/* 读到了数据 */
-			printf("Received = %d\r\n", keyEventMsg);
-		}
-
-    osDelay(1);
-
-    oledShowDemo();
+  	}
 
     osDelay(1);
   }
@@ -407,10 +412,9 @@ void StartTaskKey(void *argument)
   			if(deboundCount > DEBOUND_COUNT_MAX) {
   				keyStatus = KEY_STATUS_UP;
   				// 发送keyup到队列
-  				BaseType_t xStatus;
-  				xStatus = xQueueSend(keyEventQueue, (void *)QUEUE_MSG_KEYUP, 0);
-  				if(xStatus != pdPASS) {
-  					printf("send queue error.\r\n");
+  				osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYUP, 0, osWaitForever);
+  				if (status != osOK) {
+  				    //TODO 错误处理
   				}
   			}
   		} else {
@@ -421,19 +425,31 @@ void StartTaskKey(void *argument)
   		if(keyPinState == GPIO_PIN_RESET) {
   			decodeWaitCount++;
   			if(decodeWaitCount > DECODE_COUNT_MAX) {
-  				//TODO 发送decode到队列
+  				// 发送decode到队列
   				keyStatus = KEY_STATUS_IDLE;
+  				osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_DECODE, 0, osWaitForever);
+					if (status != osOK) {
+							//TODO 错误处理
+					}
   			}
   		} else {
   			decodeWaitCount = 0;
-  			//TODO 发送keydown到队列
+  			// 发送keydown到队列
   			keyStatus = KEY_STATUS_DOWN;
+  			osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYDOWN, 0, osWaitForever);
+				if (status != osOK) {
+						//TODO 错误处理
+				}
   		}
 
   	} else { //keyStatus == KEY_STATUS_IDLE
   		if(keyPinState == GPIO_PIN_SET) {
-  			//TODO 发送keydown到队列
+  			// 发送keydown到队列
   			keyStatus = KEY_STATUS_DOWN;
+  			osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYDOWN, 0, osWaitForever);
+				if (status != osOK) {
+						//TODO 错误处理
+				}
   		}
   	}
 
@@ -477,11 +493,6 @@ void StartTaskLed(void *argument)
     osDelay(500);
     HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
     osDelay(500);
-    BaseType_t xStatus;
-		xStatus = xQueueSend(keyEventQueue, (void *)QUEUE_MSG_KEYUP, 0);
-		if(xStatus != pdPASS) {
-			printf("send queue error.\r\n");
-		}
   }
   /* USER CODE END StartTaskLed */
 }
