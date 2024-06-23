@@ -59,31 +59,36 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED0_Pin GPIO_PIN_13
 #define LED0_GPIO_Port GPIOC
-#define KEY0_Pin GPIO_PIN_10
-#define KEY0_GPIO_Port GPIOB
+#define BEEP_Pin GPIO_PIN_4
+#define BEEP_GPIO_Port GPIOB
+#define CWKEY_Pin GPIO_PIN_5
+#define CWKEY_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
-// 按键扫描状态机
+//
 #define KEY_STATUS_IDLE	0
 #define KEY_STATUS_DOWN	1
 #define KEY_STATUS_UP		2
 
+//
+#define SHOW_STATUS_IDLE		0
+#define SHOW_STATUS_DOWN		1
+#define SHOW_STATUS_UP			2
+#define SHOW_STATUS_DECODE	3
 
-// 按键防抖计数器
-#define DEBOUND_COUNT_MAX	65535
 
-// 按键抬起后延迟一段时间，用于触发CW解码
-#define DECODE_COUNT_MAX	65535
+//
+#define DEBOUND_COUNT_MAX	30
 
-// 队列消息
+// when key is down to up,delay count time to decode cw
+#define DECODE_COUNT_MAX	1000
+
+//
 #define QUEUE_MSG_KEYDOWN	0
 #define QUEUE_MSG_KEYUP		1
 #define QUEUE_MSG_DECODE	2
 
-// 队列大小
-#define QUEUE_LENGTH	20
-#define QUEUE_ITEM_SIZE	sizeof(uint8_t)
 
 /* USER CODE END Private defines */
 

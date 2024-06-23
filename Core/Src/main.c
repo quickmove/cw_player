@@ -62,34 +62,36 @@ osThreadId_t keyTaskHandle;
 const osThreadAttr_t keyTask_attributes = {
   .name = "keyTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for beepTask */
 osThreadId_t beepTaskHandle;
 const osThreadAttr_t beepTask_attributes = {
   .name = "beepTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for ledTask */
 osThreadId_t ledTaskHandle;
 const osThreadAttr_t ledTask_attributes = {
   .name = "ledTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for keyEvent_Queue */
+osMessageQueueId_t keyEvent_QueueHandle;
+const osMessageQueueAttr_t keyEvent_Queue_attributes = {
+  .name = "keyEvent_Queue"
 };
 /* USER CODE BEGIN PV */
 
-// 队列定义
-osMessageQueueId_t keyEventQueueId;
-
-// 字库表
+//
 uint8_t fontMap[][16] = {
 		{0x00,0xC0,0x40,0x40,0x40,0x40,0xF0,0x40,0x40,0x40,0x40,0x40,0xC0,0x00,0x00,0x00},
-		{0x00,0x07,0x02,0x02,0x02,0x02,0x1F,0x02,0x02,0x02,0x02,0x02,0x07,0x00,0x00,0x00},/*,0 中*/
+		{0x00,0x07,0x02,0x02,0x02,0x02,0x1F,0x02,0x02,0x02,0x02,0x02,0x07,0x00,0x00,0x00},/*,0 */
 
 		{0x20,0x20,0x20,0xE0,0x20,0x20,0x28,0x30,0x20,0x20,0xE0,0x20,0x20,0x20,0x00,0x00},
-		{0x10,0x10,0x10,0x08,0x09,0x0A,0x04,0x04,0x0A,0x09,0x08,0x10,0x10,0x10,0x00,0x00},/*,1 文*/
+		{0x10,0x10,0x10,0x08,0x09,0x0A,0x04,0x04,0x0A,0x09,0x08,0x10,0x10,0x10,0x00,0x00},/*,1 */
 };
 
 /* USER CODE END PV */
@@ -113,7 +115,6 @@ void oledShowCWLine(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// 显示中文2个字
 void oledShowDemo(void) {
   uint8_t posD[] = {0xb0, 0x00, 0x10};
   ssd1306_show(posD, 3, &fontMap[0][0], 16);
@@ -128,7 +129,6 @@ void oledShowDemo(void) {
 	ssd1306_show(posD, 3, &fontMap[3][0], 16);
 }
 
-// 显示CW的提示线
 void oledShowCWLine(void) {
 
 }
@@ -143,9 +143,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
-	// 创建队列
-	keyEventQueueId = osMessageQueueNew(QUEUE_LENGTH, QUEUE_ITEM_SIZE, NULL);
 
   /* USER CODE END 1 */
 
@@ -186,6 +183,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of keyEvent_Queue */
+  keyEvent_QueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &keyEvent_Queue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -312,11 +313,14 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin : LED0_Pin */
   GPIO_InitStruct.Pin = LED0_Pin;
@@ -325,11 +329,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LED0_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : KEY0_Pin */
-  GPIO_InitStruct.Pin = KEY0_Pin;
+  /*Configure GPIO pin : BEEP_Pin */
+  GPIO_InitStruct.Pin = BEEP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(BEEP_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CWKEY_Pin */
+  GPIO_InitStruct.Pin = CWKEY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(KEY0_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(CWKEY_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -349,39 +360,67 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	// 定义变量
-	uint8_t keyEventMsg;
-	osStatus_t status;
+	uint8_t keyEventMsg = 0;
+	osStatus_t status = 0;
+	uint8_t cwLineStatus = 0;
 
 	ssd1306_init(&hi2c1);
 
   /* Infinite loop */
   for(;;)
   {
-  	status = osMessageQueueGet(keyEventQueueId, &keyEventMsg, NULL, osWaitForever);
-  	if (status == osOK) {
-  	  // 处理消息
+  	status = osMessageQueueGet(keyEvent_QueueHandle, &keyEventMsg, NULL, 0);
+  	if(status == osOK) { // received, switch show_status of cw_line.
   		if(keyEventMsg == QUEUE_MSG_KEYDOWN) {
-  			for(;;) {
-  				// 数组循环左移2个下标，最后2个下标赋值CW_LINE_DOT
-  				// 重画cw_line页
-  				osDelay(500);
-  			}
-  		} else  if(keyEventMsg == QUEUE_MSG_KEYUP) {
-  			for(;;) {
-  				// 数组循环左移2个下标，最后2个下标赋值CW_LINE_BLANK
-  				// 重画cw_line页
-  				osDelay(500);
-  			}
+  			cwLineStatus = SHOW_STATUS_DOWN;
+  		} else if(keyEventMsg == QUEUE_MSG_KEYUP) {
+  			cwLineStatus = SHOW_STATUS_UP;
   		} else if(keyEventMsg == QUEUE_MSG_DECODE) {
-  			// 数组循环左移6个下标，最后6个赋值CW_LINE_BLANK
-  			// 重画cw_line页
-  		} else {
-  			// 啥也没有
-  			osDelay(1);
+  			cwLineStatus = SHOW_STATUS_DECODE;
   		}
-
   	}
+
+		// process cw_line
+		if(cwLineStatus == SHOW_STATUS_DOWN) {
+			// array move left 2 index, last 2 byte set CW_LINE_DOT
+			// refresh cw_line
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+			osStatus_t beepThreadStatus = osThreadResume(beepTaskHandle);
+			if(beepThreadStatus == osOK) {
+				//TODO open beep
+			}
+			osDelay(1);
+		} else  if(cwLineStatus == SHOW_STATUS_UP) {
+			// array move left 2 index, last 2 byte set CW_LINE_BLANK
+			// refresh cw_line
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
+			if(beepThreadStatus == osOK) {
+				//TODO stop beep
+			}
+			osDelay(1);
+		} else if(cwLineStatus == SHOW_STATUS_DECODE) {
+			// array move left 6 index, last 6 byte set CW_LINE_BLANK
+			// refresh cw_line
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+			osDelay(50);
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+			osDelay(50);
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+			osDelay(50);
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+			osDelay(50);
+			cwLineStatus = SHOW_STATUS_IDLE;
+		} else { // cw_line is IDLE
+			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
+			if(beepThreadStatus == osOK) {
+				//TODO stop beep
+			}
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+			osDelay(500);
+			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+			osDelay(500);
+		}
 
     osDelay(1);
   }
@@ -398,57 +437,64 @@ void StartDefaultTask(void *argument)
 void StartTaskKey(void *argument)
 {
   /* USER CODE BEGIN StartTaskKey */
-	uint8_t keyStatus = 0;
-	uint8_t deboundCount = 0;
-	uint8_t decodeWaitCount = 0;
+	uint8_t keyStatus = KEY_STATUS_IDLE;
+	uint8_t keyQueueMsg = 0;
+	uint16_t deboundCount = 0;
+	uint16_t decodeWaitCount = 0;
   /* Infinite loop */
   for(;;)
   {
-  	GPIO_PinState keyPinState = HAL_GPIO_ReadPin(KEY0_GPIO_Port, KEY0_Pin);
+  	GPIO_PinState keyPinState = HAL_GPIO_ReadPin(CWKEY_GPIO_Port, CWKEY_Pin);
 
   	if(keyStatus == KEY_STATUS_DOWN) {
-  		if(keyPinState == GPIO_PIN_RESET) {
+  		if(keyPinState == GPIO_PIN_SET) {	// key is UP
   			deboundCount++;
   			if(deboundCount > DEBOUND_COUNT_MAX) {
-  				keyStatus = KEY_STATUS_UP;
-  				// 发送keyup到队列
-  				osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYUP, 0, osWaitForever);
+  				keyQueueMsg = QUEUE_MSG_KEYUP;
+  				osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
   				if (status != osOK) {
   				    //TODO 错误处理
+  				} else {
+  					deboundCount = 0;
+  					keyStatus = KEY_STATUS_UP;
   				}
   			}
-  		} else {
+  		} else {	// keyPinState == GPIO_PIN_RESET // key is DOWNing
 				deboundCount = 0;
 			}
 
   	} else if(keyStatus == KEY_STATUS_UP) {
-  		if(keyPinState == GPIO_PIN_RESET) {
+  		if(keyPinState == GPIO_PIN_SET) {
   			decodeWaitCount++;
   			if(decodeWaitCount > DECODE_COUNT_MAX) {
-  				// 发送decode到队列
-  				keyStatus = KEY_STATUS_IDLE;
-  				osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_DECODE, 0, osWaitForever);
+  				keyQueueMsg = QUEUE_MSG_DECODE;
+  				osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
 					if (status != osOK) {
 							//TODO 错误处理
+					} else {
+						decodeWaitCount = 0;
+	  				keyStatus = KEY_STATUS_IDLE;
 					}
   			}
-  		} else {
+  		} else {	//keyPinState == GPIO_PIN_RESET	// key is DOWN
   			decodeWaitCount = 0;
-  			// 发送keydown到队列
-  			keyStatus = KEY_STATUS_DOWN;
-  			osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYDOWN, 0, osWaitForever);
+  			keyQueueMsg = QUEUE_MSG_KEYDOWN;
+  			osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
 				if (status != osOK) {
 						//TODO 错误处理
+				} else {
+	  			keyStatus = KEY_STATUS_DOWN;
 				}
   		}
 
   	} else { //keyStatus == KEY_STATUS_IDLE
-  		if(keyPinState == GPIO_PIN_SET) {
-  			// 发送keydown到队列
-  			keyStatus = KEY_STATUS_DOWN;
-  			osStatus_t status = osMessageQueuePut(keyEventQueueId, (void *)QUEUE_MSG_KEYDOWN, 0, osWaitForever);
+  		if(keyPinState == GPIO_PIN_RESET) {	// key is DOWN
+  			keyQueueMsg = QUEUE_MSG_KEYDOWN;
+  			osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
 				if (status != osOK) {
 						//TODO 错误处理
+				} else {
+					keyStatus = KEY_STATUS_DOWN;
 				}
   		}
   	}
@@ -471,7 +517,10 @@ void StartTaskBeep(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+  	HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
+  	osDelay(1/portTICK_RATE_MS);
+		HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
+		osDelay(pdMS_TO_TICKS(1));
   }
   /* USER CODE END StartTaskBeep */
 }
@@ -489,10 +538,11 @@ void StartTaskLed(void *argument)
   /* Infinite loop */
   for(;;)
   {
-  	HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
-    osDelay(500);
-    HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
-    osDelay(500);
+//  	HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+//    osDelay(500);
+//    HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+//    osDelay(500);
+  	osDelay(1);
   }
   /* USER CODE END StartTaskLed */
 }
