@@ -79,10 +79,13 @@ void Error_Handler(void);
 
 
 //
-#define DEBOUND_COUNT_MAX	30
+#define DEBOUND_COUNT_MAX	3
 
 // when key is down to up,delay count time to decode cw
 #define DECODE_COUNT_MAX	1000
+
+
+#define CW_LINE_SHOW_DELAY_COUNT_MAX	50
 
 //
 #define QUEUE_MSG_KEYDOWN	0

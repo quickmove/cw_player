@@ -40,6 +40,10 @@
 #define CW_LINE_DOT		0x18
 #define CW_LINE_BLANK	0x00
 
+#define CW_LINE_ACTION_DECODE		1
+#define CW_LINE_ACTION_DOT			2
+#define CW_LINE_ACTION_BLANK		3
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -94,6 +98,9 @@ uint8_t fontMap[][16] = {
 		{0x10,0x10,0x10,0x08,0x09,0x0A,0x04,0x04,0x0A,0x09,0x08,0x10,0x10,0x10,0x00,0x00},/*,1 */
 };
 
+// 128point/1 line
+uint8_t cwLineBuff[128];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,29 +115,76 @@ void StartTaskLed(void *argument);
 /* USER CODE BEGIN PFP */
 
 void oledShowDemo(void);
-void oledShowCWLine(void);
+void oledShowCWLine(uint8_t action);
+void oledCwLineBuffInit(void);
+
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void oledShowDemo(void) {
-  uint8_t posD[] = {0xb0, 0x00, 0x10};
-  ssd1306_show(posD, 3, &fontMap[0][0], 16);
+void oledShowDemo (void)
+{
+	// posD: page=b0-b7, col-lower=0x00-0x0f, col-upper=0x10-0x1f
+  uint8_t posD[] = { 0xb0, 0x00, 0x10 };
+  ssd1306_show (posD, 3, &fontMap[0][0], 16);
   posD[0] = 0xb1;	// page1
   posD[1] = 0x00;
-  ssd1306_show(posD, 3, &fontMap[1][0], 16);
+  ssd1306_show (posD, 3, &fontMap[1][0], 16);
   posD[0] = 0xb0;
   posD[2] = 0x11;
-	ssd1306_show(posD, 3, &fontMap[2][0], 16);
-	posD[0] = 0xb1;
-	posD[2] = 0x11;
-	ssd1306_show(posD, 3, &fontMap[3][0], 16);
+  ssd1306_show (posD, 3, &fontMap[2][0], 16);
+  posD[0] = 0xb1;
+  posD[2] = 0x11;
+  ssd1306_show (posD, 3, &fontMap[3][0], 16);
 }
 
-void oledShowCWLine(void) {
+void oledShowCWLine(uint8_t action) {
+	// process cwLineBuff by action
+	if(action == CW_LINE_ACTION_DOT) {
+		// array move left 2 index, last 2 byte set CW_LINE_DOT
+		for(uint8_t i = 0; i < 128-2; i++) {
+			cwLineBuff[i] = cwLineBuff[i+2];
+		}
+		cwLineBuff[126] = CW_LINE_DOT;
+		cwLineBuff[127] = CW_LINE_DOT;
+	} else if(action == CW_LINE_ACTION_BLANK) {
+		for(uint8_t i = 0; i < 128-2; i++) {
+			cwLineBuff[i] = cwLineBuff[i+2];
+		}
+		cwLineBuff[126] = CW_LINE_BLANK;
+		cwLineBuff[127] = CW_LINE_BLANK;
+	} else if(action == CW_LINE_ACTION_DECODE) {
+		for(uint8_t i = 0; i < 128-6; i++) {
+			cwLineBuff[i] = cwLineBuff[i+6];
+		}
+		cwLineBuff[122] = CW_LINE_BLANK;
+		cwLineBuff[123] = CW_LINE_BLANK;
+		cwLineBuff[124] = CW_LINE_BLANK;
+		cwLineBuff[125] = CW_LINE_BLANK;
+		cwLineBuff[126] = CW_LINE_BLANK;
+		cwLineBuff[127] = CW_LINE_BLANK;
+	} else {
+		//TODO out of action
+	}
 
+	// page0 info h
+	// page1 info l
+	// page2 graph h
+	// page3 graph l
+	// page4 ------
+	//*page5 cwline
+	// page6 decode h
+	// page7 decode l
+	uint8_t posD[] = { 0xb5, 0x00, 0x10 };
+	ssd1306_show (posD, 3, cwLineBuff, 128);
+}
+
+void oledCwLineBuffInit(void) {
+	for(uint8_t i = 0; i < 128; i++) {
+		cwLineBuff[i] = 0x00;
+	}
 }
 
 /* USER CODE END 0 */
@@ -227,6 +281,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
+
 }
 
 /**
@@ -363,6 +418,7 @@ void StartDefaultTask(void *argument)
 	uint8_t keyEventMsg = 0;
 	osStatus_t status = 0;
 	uint8_t cwLineStatus = 0;
+	uint8_t cwLineShowDelay = 0;
 
 	ssd1306_init(&hi2c1);
 
@@ -378,48 +434,38 @@ void StartDefaultTask(void *argument)
   		} else if(keyEventMsg == QUEUE_MSG_DECODE) {
   			cwLineStatus = SHOW_STATUS_DECODE;
   		}
+  		cwLineShowDelay = 0;
   	}
 
 		// process cw_line
 		if(cwLineStatus == SHOW_STATUS_DOWN) {
-			// array move left 2 index, last 2 byte set CW_LINE_DOT
-			// refresh cw_line
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
+			cwLineShowDelay++;
+			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_COUNT_MAX) {
+				oledShowCWLine(CW_LINE_ACTION_DOT);
+				cwLineShowDelay = 0;
+			}
 			osStatus_t beepThreadStatus = osThreadResume(beepTaskHandle);
 			if(beepThreadStatus == osOK) {
 				//TODO open beep
 			}
-			osDelay(1);
 		} else  if(cwLineStatus == SHOW_STATUS_UP) {
-			// array move left 2 index, last 2 byte set CW_LINE_BLANK
-			// refresh cw_line
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
+			cwLineShowDelay++;
+			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_COUNT_MAX) {
+				oledShowCWLine(CW_LINE_ACTION_BLANK);
+				cwLineShowDelay = 0;
+			}
 			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
 			if(beepThreadStatus == osOK) {
 				//TODO stop beep
 			}
-			osDelay(1);
 		} else if(cwLineStatus == SHOW_STATUS_DECODE) {
-			// array move left 6 index, last 6 byte set CW_LINE_BLANK
-			// refresh cw_line
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
-			osDelay(50);
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
-			osDelay(50);
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
-			osDelay(50);
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
-			osDelay(50);
+			oledShowCWLine(CW_LINE_ACTION_DECODE);
 			cwLineStatus = SHOW_STATUS_IDLE;
 		} else { // cw_line is IDLE
 			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
 			if(beepThreadStatus == osOK) {
 				//TODO stop beep
 			}
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
-			osDelay(500);
-			HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
-			osDelay(500);
 		}
 
     osDelay(1);
@@ -518,9 +564,9 @@ void StartTaskBeep(void *argument)
   for(;;)
   {
   	HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
-  	osDelay(1/portTICK_RATE_MS);
+  	osDelay(1);
 		HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
-		osDelay(pdMS_TO_TICKS(1));
+		osDelay(1);
   }
   /* USER CODE END StartTaskBeep */
 }
@@ -538,10 +584,6 @@ void StartTaskLed(void *argument)
   /* Infinite loop */
   for(;;)
   {
-//  	HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
-//    osDelay(500);
-//    HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_RESET);
-//    osDelay(500);
   	osDelay(1);
   }
   /* USER CODE END StartTaskLed */
