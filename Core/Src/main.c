@@ -26,6 +26,7 @@
 #include "math.h"
 #include "queue.h"
 #include "ssd1306.h"
+#include "delay.h"
 
 /* USER CODE END Includes */
 
@@ -117,6 +118,7 @@ void StartTaskLed(void *argument);
 void oledShowDemo(void);
 void oledShowCWLine(uint8_t action);
 void oledCwLineBuffInit(void);
+void oledShowCWDecode(uint8_t didaBuff);
 
 
 /* USER CODE END PFP */
@@ -156,11 +158,9 @@ void oledShowCWLine(uint8_t action) {
 		cwLineBuff[126] = CW_LINE_BLANK;
 		cwLineBuff[127] = CW_LINE_BLANK;
 	} else if(action == CW_LINE_ACTION_DECODE) {
-		for(uint8_t i = 0; i < 128-6; i++) {
-			cwLineBuff[i] = cwLineBuff[i+6];
+		for(uint8_t i = 0; i < 128-4; i++) {
+			cwLineBuff[i] = cwLineBuff[i+4];
 		}
-		cwLineBuff[122] = CW_LINE_BLANK;
-		cwLineBuff[123] = CW_LINE_BLANK;
 		cwLineBuff[124] = CW_LINE_BLANK;
 		cwLineBuff[125] = CW_LINE_BLANK;
 		cwLineBuff[126] = CW_LINE_BLANK;
@@ -185,6 +185,10 @@ void oledCwLineBuffInit(void) {
 	for(uint8_t i = 0; i < 128; i++) {
 		cwLineBuff[i] = 0x00;
 	}
+}
+
+void oledShowCWDecode(uint8_t didaBuff) {
+	//TODO 显示解码的信息
 }
 
 /* USER CODE END 0 */
@@ -419,6 +423,8 @@ void StartDefaultTask(void *argument)
 	osStatus_t status = 0;
 	uint8_t cwLineStatus = 0;
 	uint8_t cwLineShowDelay = 0;
+	uint8_t checkDiDaDelay = 0;
+	uint8_t didaBuff = 0;
 
 	ssd1306_init(&hi2c1);
 
@@ -440,8 +446,9 @@ void StartDefaultTask(void *argument)
 		// process cw_line
 		if(cwLineStatus == SHOW_STATUS_DOWN) {
 			cwLineShowDelay++;
-			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_COUNT_MAX) {
+			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_MAX) {
 				oledShowCWLine(CW_LINE_ACTION_DOT);
+				checkDiDaDelay++;
 				cwLineShowDelay = 0;
 			}
 			osStatus_t beepThreadStatus = osThreadResume(beepTaskHandle);
@@ -450,8 +457,16 @@ void StartDefaultTask(void *argument)
 			}
 		} else  if(cwLineStatus == SHOW_STATUS_UP) {
 			cwLineShowDelay++;
-			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_COUNT_MAX) {
+			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_MAX) {
 				oledShowCWLine(CW_LINE_ACTION_BLANK);
+				if(checkDiDaDelay > CW_LINE_CHECK_DIDA_DELAY_MAX) {
+					// is da _, set didaBuff 1
+					didaBuff = didaBuff << 1 | 0x01;
+				} else {
+					// is di .,set didaBuff 0
+					didaBuff = didaBuff << 1;
+				}
+				checkDiDaDelay = 0;
 				cwLineShowDelay = 0;
 			}
 			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
@@ -461,6 +476,7 @@ void StartDefaultTask(void *argument)
 		} else if(cwLineStatus == SHOW_STATUS_DECODE) {
 			oledShowCWLine(CW_LINE_ACTION_DECODE);
 			cwLineStatus = SHOW_STATUS_IDLE;
+			//TODO show
 		} else { // cw_line is IDLE
 			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
 			if(beepThreadStatus == osOK) {
@@ -495,7 +511,7 @@ void StartTaskKey(void *argument)
   	if(keyStatus == KEY_STATUS_DOWN) {
   		if(keyPinState == GPIO_PIN_SET) {	// key is UP
   			deboundCount++;
-  			if(deboundCount > DEBOUND_COUNT_MAX) {
+  			if(deboundCount > DEBOUND_DELAY_MAX) {
   				keyQueueMsg = QUEUE_MSG_KEYUP;
   				osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
   				if (status != osOK) {
@@ -512,7 +528,7 @@ void StartTaskKey(void *argument)
   	} else if(keyStatus == KEY_STATUS_UP) {
   		if(keyPinState == GPIO_PIN_SET) {
   			decodeWaitCount++;
-  			if(decodeWaitCount > DECODE_COUNT_MAX) {
+  			if(decodeWaitCount > DECODE_DELAY_MAX) {
   				keyQueueMsg = QUEUE_MSG_DECODE;
   				osStatus_t status = osMessageQueuePut(keyEvent_QueueHandle, &keyQueueMsg, 0, osWaitForever);
 					if (status != osOK) {
@@ -564,8 +580,13 @@ void StartTaskBeep(void *argument)
   for(;;)
   {
   	HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
-  	osDelay(1);
+  	delay_us(1);
 		HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
+		delay_us(1);
+  	HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
+  	delay_us(1);
+		HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
+
 		osDelay(1);
   }
   /* USER CODE END StartTaskBeep */

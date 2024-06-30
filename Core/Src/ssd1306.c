@@ -51,8 +51,10 @@ uint8_t OriginData[] = {0xb0, 0x00, 0x10};
 uint8_t ssd1306_init(I2C_HandleTypeDef* phI2c) {
 	pI2CHandle = phI2c;
 	osDelay(500);
+	// init ssd1306 settings
 	HAL_I2C_Mem_Write(pI2CHandle, ADDR, WCOM, I2C_MEMADD_SIZE_8BIT, InitData, sizeof(InitData), 1000);
 	HAL_I2C_Mem_Write(pI2CHandle, ADDR, WCOM, I2C_MEMADD_SIZE_8BIT, OriginData, sizeof(OriginData), 1000);
+
 	return 0;
 }
 
