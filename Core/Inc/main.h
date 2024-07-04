@@ -82,7 +82,7 @@ void Error_Handler(void);
 #define DEBOUND_DELAY_MAX	3
 
 // when key is down to up,delay count time to decode cw
-#define DECODE_DELAY_MAX	150
+#define DECODE_DELAY_MAX	200
 
 // delay x count for show dot or blank
 #define CW_LINE_SHOW_DELAY_MAX	30
