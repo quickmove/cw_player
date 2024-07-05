@@ -55,6 +55,8 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim2;
+
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
@@ -66,13 +68,6 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t keyTaskHandle;
 const osThreadAttr_t keyTask_attributes = {
   .name = "keyTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for beepTask */
-osThreadId_t beepTaskHandle;
-const osThreadAttr_t beepTask_attributes = {
-  .name = "beepTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -187,9 +182,9 @@ uint8_t decodeLineCurrentPos = 0;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM2_Init(void);
 void StartDefaultTask(void *argument);
 void StartTaskKey(void *argument);
-void StartTaskBeep(void *argument);
 void StartTaskLed(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -276,7 +271,7 @@ void oledShowCWDecode(uint8_t didaBuff) {
 		oledShowHisCWDecode();
 	}
 
-	// 26 is “?”
+	// 26 is "?"
 	uint8_t didaDecodeFontIndex = 26;
 
 	// set 1 for pad right
@@ -365,6 +360,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -399,9 +395,6 @@ int main(void)
   /* creation of keyTask */
   keyTaskHandle = osThreadNew(StartTaskKey, NULL, &keyTask_attributes);
 
-  /* creation of beepTask */
-  beepTaskHandle = osThreadNew(StartTaskBeep, NULL, &beepTask_attributes);
-
   /* creation of ledTask */
   ledTaskHandle = osThreadNew(StartTaskLed, NULL, &ledTask_attributes);
 
@@ -427,7 +420,6 @@ int main(void)
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-
 }
 
 /**
@@ -501,6 +493,65 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 72-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 100-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 50;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -520,22 +571,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED0_GPIO_Port, LED0_Pin, GPIO_PIN_SET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
-
   /*Configure GPIO pin : LED0_Pin */
   GPIO_InitStruct.Pin = LED0_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(LED0_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : BEEP_Pin */
-  GPIO_InitStruct.Pin = BEEP_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(BEEP_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : CWKEY_Pin */
   GPIO_InitStruct.Pin = CWKEY_Pin;
@@ -597,10 +638,7 @@ void StartDefaultTask(void *argument)
 				checkDiDaDelay++;
 				cwLineShowDelay = 0;
 			}
-			osStatus_t beepThreadStatus = osThreadResume(beepTaskHandle);
-			if(beepThreadStatus == osOK) {
-				//TODO open beep
-			}
+			HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		} else  if(cwLineStatus == SHOW_STATUS_UP) {
 			cwLineShowDelay++;
 			if(cwLineShowDelay > CW_LINE_SHOW_DELAY_MAX) {
@@ -617,20 +655,14 @@ void StartDefaultTask(void *argument)
 				}
 				cwLineShowDelay = 0;
 			}
-			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
-			if(beepThreadStatus == osOK) {
-				//TODO stop beep
-			}
+			HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 		} else if(cwLineStatus == SHOW_STATUS_DECODE) {
 			oledShowCWLine(CW_LINE_ACTION_DECODE);
 			oledShowCWDecode(didaBuff);
 			didaBuff = 0b1;
 			cwLineStatus = SHOW_STATUS_IDLE;
 		} else { // cw_line is IDLE
-			osStatus_t beepThreadStatus = osThreadSuspend(beepTaskHandle);
-			if(beepThreadStatus == osOK) {
-				//TODO stop beep
-			}
+			HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 		}
 
     osDelay(1);
@@ -713,28 +745,6 @@ void StartTaskKey(void *argument)
     osDelay(1);
   }
   /* USER CODE END StartTaskKey */
-}
-
-/* USER CODE BEGIN Header_StartTaskBeep */
-/**
-* @brief Function implementing the beepTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartTaskBeep */
-void StartTaskBeep(void *argument)
-{
-  /* USER CODE BEGIN StartTaskBeep */
-  /* Infinite loop */
-  for(;;)
-  {
-  	HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
-  	delay_us(1);
-		HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
-
-		osDelay(1);
-  }
-  /* USER CODE END StartTaskBeep */
 }
 
 /* USER CODE BEGIN Header_StartTaskLed */
