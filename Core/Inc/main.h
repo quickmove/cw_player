@@ -84,6 +84,9 @@ void Error_Handler(void);
 // when key is down to up,delay count time to decode cw
 #define DECODE_DELAY_MAX	200
 
+// when idle, delay count time to switch delay mode
+#define MODE_IDLE_DELAY_MAX	1000
+
 // delay x count for show dot or blank
 #define CW_LINE_SHOW_DELAY_MAX	30
 
@@ -94,6 +97,12 @@ void Error_Handler(void);
 #define QUEUE_MSG_KEYDOWN	0
 #define QUEUE_MSG_KEYUP		1
 #define QUEUE_MSG_DECODE	2
+
+//
+#define MODE_IDLE		0
+#define MODE_PLAY		1
+
+//
 
 
 /* USER CODE END Private defines */
