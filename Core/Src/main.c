@@ -59,6 +59,7 @@
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -181,6 +182,10 @@ uint8_t decodeLineHisBuff[16];
 //
 uint8_t decodeLineCurrentPos = 0;
 
+//
+uint16_t velSecondCount = 0;
+uint16_t velDecodeCount = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -188,6 +193,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 void StartDefaultTask(void *argument);
 void StartTaskKey(void *argument);
 void StartTaskLed(void *argument);
@@ -202,6 +208,7 @@ void oledClearCWDecode(void);
 void oledShowHisCWDecode(void);
 void oledShowMode(uint8_t mode);
 void oledInitInfo(void);
+void oledRefreshVel(void);
 
 
 /* USER CODE END PFP */
@@ -384,6 +391,25 @@ void oledInitInfo(void) {
 	}
 }
 
+void oledRefreshVel(void) {
+	uint8_t posD[3];
+	uint8_t vel_bit[3];
+	uint16_t vel = velDecodeCount * 60 / velSecondCount;
+
+	vel_bit[0] = vel / 100;
+	vel_bit[1] = (vel % 100) / 10;
+	vel_bit[2] = vel % 10;
+
+	for(uint8_t i = 0; i < 3; i++) {
+		posD[0] = 0xb0;
+		posD[1] = 0x00 + (((i + 10) * 8) & 0b1111);
+		posD[2] = 0x10 + ((((i + 10) * 8) & 0b11110000) >> 4);
+		ssd1306_show(posD, 3, &fontMap[27 + vel_bit[i]][0], 8);
+		posD[0] = 0xb1;
+		ssd1306_show(posD, 3, &fontMap[27 + vel_bit[i]][8], 8);
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -417,6 +443,7 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -568,9 +595,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 72-1;
+  htim2.Init.Prescaler = 8-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 100-1;
+  htim2.Init.Period = 1250-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -604,6 +631,51 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 800-1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 10000-1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
 
 }
 
@@ -697,6 +769,7 @@ void StartDefaultTask(void *argument)
 				if(mode == MODE_IDLE) {
 					oledShowMode(MODE_PLAY);
 					mode = MODE_PLAY;
+					HAL_TIM_Base_Start_IT(&htim3);
 				}
 			}
 			BEEP_START;
@@ -720,16 +793,21 @@ void StartDefaultTask(void *argument)
 		} else if(cwLineStatus == SHOW_STATUS_DECODE) {
 			oledShowCWLine(CW_LINE_ACTION_DECODE);
 			oledShowCWDecode(didaBuff);
+			oledRefreshVel();
 			didaBuff = 0b1;
 			cwLineStatus = SHOW_STATUS_IDLE;
 			modeIdleDelay=1;
+			velDecodeCount++;
 		} else { // cw_line is IDLE
 			BEEP_STOP;
 			if(modeIdleDelay > MODE_IDLE_DELAY_MAX) {
 				modeIdleDelay = 0;
-				mode= MODE_IDLE;
 				// switch mode to idle
 				oledShowMode(MODE_IDLE);
+				mode= MODE_IDLE;
+				HAL_TIM_Base_Stop_IT(&htim3);
+				velSecondCount = 0;
+				velDecodeCount = 0;
 			} else if(modeIdleDelay > 0) {
 				modeIdleDelay++;
 			}
@@ -852,6 +930,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+
+  if(htim->Instance == TIM3) {
+  	velSecondCount++;
+  	if(velSecondCount > 999) {
+  		velSecondCount = 0;
+  	}
+  }
 
   /* USER CODE END Callback 1 */
 }
